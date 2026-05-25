@@ -1,0 +1,26 @@
+{
+  "name": "wesplit",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm --workspace=packages/api run dev",
+    "dev:mobile": "cd apps/mobile && expo start",
+    "dev:web": "cd apps/web && next dev -p 3001",
+    "dev:db": "docker compose up -d",
+    "db:migrate": "npm --workspace=packages/api run db:migrate",
+    "db:migrate:prod": "npm --workspace=packages/api run db:migrate:prod",
+    "db:seed": "npm --workspace=packages/api run db:seed",
+    "db:studio": "npm --workspace=packages/api run db:studio",
+    "db:reset": "docker compose down -v && docker compose up -d && npm run db:migrate && npm run db:seed",
+    "typecheck": "npm --workspaces run typecheck --if-present",
+    "build:api": "npm --workspace=packages/api run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}

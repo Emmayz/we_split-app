@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                     String               @id @default(uuid())
+  name                   String
+  email                  String               @unique
+  phone                  String               @unique
+  passwordHash           String
+  avatarUrl              String?
+  walletBalanceGbp       Decimal              @default(0) @db.Decimal(10, 2)
+  stripeConnectAccountId String?
+  kycStatus              KycStatus            @default(NONE)
+  refreshToken           String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  splits               Split[]
+  walletTransactions   WalletTransaction[]
+
+  @@map("users")
+}
+
+model Split {
+  id         String      @id @default(uuid())
+  name       String
+  totalGbp   Decimal     @db.Decimal(10, 2)
+  hostId     String
+  status     SplitStatus @default(ACTIVE)
+  createdAt  DateTime    @default(now())
+  settledAt  DateTime?
+  updatedAt  DateTime    @updatedAt
+
+  host        User          @relation(fields: [hostId], references: [id])
+  members     SplitMember[]
+  lineItems   LineItem[]
+
+  @@index([hostId])
+  @@map("splits")
+}
+
+model SplitMember {
+  id                    String          @id @default(uuid())
+  splitId               String
+  guestName             String
+  guestContact          String
+  contactType           ContactType
+  shareGbp              Decimal         @db.Decimal(10, 2)
+  paid                  Boolean         @default(false)
+  paidAt                DateTime?
+  paymentMethod         PaymentMethod?
+  stripePaymentIntentId String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  split       Split         @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  lineItems   LineItem[]
+  guestTokens GuestToken[]
+
+  @@index([splitId])
+  @@index([guestContact])
+  @@map("split_members")
+}
+
+model LineItem {
+  id                 String   @id @default(uuid())
+  splitId            String
+  name               String
+  priceGbp           Decimal  @db.Decimal(10, 2)
+  assignedToMemberId String?
+  createdAt          DateTime @default(now())
+
+  split          Split        @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  assignedMember SplitMember? @relation(fields: [assignedToMemberId], references: [id])
+
+  @@map("line_items")
+}
+
+model GuestToken {
+  token     String   @id
+  splitId   String
+  memberId  String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  member SplitMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("guest_tokens")
+}
+
+model WalletTransaction {
+  id             String            @id @default(uuid())
+  userId         String
+  type           TransactionType
+  amountGbp      Decimal           @db.Decimal(10, 2)
+  description    String
+  splitId        String?
+  stripePayoutId String?
+  status         TransactionStatus @default(PENDING)
+  createdAt      DateTime          @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("wallet_transactions")
+}
+
+enum KycStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum SplitStatus {
+  ACTIVE
+  SETTLED
+  CANCELLED
+}
+
+enum ContactType {
+  PHONE
+  EMAIL
+}
+
+enum PaymentMethod {
+  APPLE_PAY
+  GOOGLE_PAY
+  CARD
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+  WITHDRAWAL
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
