@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Space Grotesk", sans-serif;
+  --color-bg: #0B0B14;
+  --color-surface: #14141F;
+  --color-surface-elevated: #1C1C2A;
+  --color-accent: #00E5FF;
+  --color-border: #1F1F2D;
+  --color-text-primary: #F0EEE7;
+  --color-text-secondary: #8A8A9B;
+  --color-text-tertiary: #5A5A6B;
+  --color-success: #00FF94;
+  --color-warning: #FFB800;
+  --color-error: #FF4D6D;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #0B0B14;
+  color: #F0EEE7;
+  font-family: "Space Grotesk", sans-serif;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #00E5FF33;
+  color: #F0EEE7;
+}
