@@ -6,8 +6,7 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\" \"npm run dev:marketing\"",
-    "dev:marketing": "cd apps/marketing && next dev -p 3002",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
     "dev:api": "npm --workspace=packages/api run dev",
     "dev:mobile": "cd apps/mobile && expo start",
     "dev:web": "cd apps/web && next dev -p 3001",
