@@ -9,3 +9,6 @@ postgres_data/
 *.tsbuildinfo
 coverage/
 .turbo/
+__pycache__/
+*.pyc
+*.pyo
