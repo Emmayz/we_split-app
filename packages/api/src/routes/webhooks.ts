@@ -36,11 +36,10 @@ export async function webhookRoutes(fastify: FastifyInstance, options: { prisma:
         const { memberId, splitId, token } = pi.metadata;
         if (!memberId) break;
 
-        const member = await prisma.splitMember.findUnique({ where: { id: memberId } });
-        if (!member || member.paid) break;
-
-        await prisma.splitMember.update({
-          where: { id: memberId },
+        // Atomic update: only process if not already marked paid.
+        // This prevents double-credit when both the guest route and webhook fire.
+        const result = await prisma.splitMember.updateMany({
+          where: { id: memberId, paid: false },
           data: {
             paid: true,
             paidAt: new Date(),
@@ -48,6 +47,8 @@ export async function webhookRoutes(fastify: FastifyInstance, options: { prisma:
             stripePaymentIntentId: pi.id,
           },
         });
+
+        if (result.count === 0) break; // Already processed by guest route or prior webhook delivery
 
         const split = await prisma.split.findUnique({ where: { id: splitId } });
         if (split) {
@@ -81,18 +82,23 @@ export async function webhookRoutes(fastify: FastifyInstance, options: { prisma:
 
       case "payout.failed": {
         const payout = event.data.object as { id: string; amount: number };
-        const tx = await prisma.walletTransaction.findFirst({
-          where: { stripePayoutId: payout.id },
+
+        // Atomic update: only transition to FAILED once, preventing double-refund on Stripe retries
+        const result = await prisma.walletTransaction.updateMany({
+          where: { stripePayoutId: payout.id, status: { not: "FAILED" } },
+          data: { status: "FAILED" },
         });
-        if (tx) {
-          await prisma.walletTransaction.update({
-            where: { id: tx.id },
-            data: { status: "FAILED" },
+
+        if (result.count > 0) {
+          const tx = await prisma.walletTransaction.findFirst({
+            where: { stripePayoutId: payout.id },
           });
-          await prisma.user.update({
-            where: { id: tx.userId },
-            data: { walletBalanceGbp: { increment: Number(tx.amountGbp) } },
-          });
+          if (tx) {
+            await prisma.user.update({
+              where: { id: tx.userId },
+              data: { walletBalanceGbp: { increment: Number(tx.amountGbp) } },
+            });
+          }
         }
         break;
       }

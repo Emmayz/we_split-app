@@ -53,13 +53,24 @@ export async function splitsRoutes(fastify: FastifyInstance, options: { prisma: 
 
   fastify.get("/splits", { preHandler: [fastify.authenticate] }, async (request) => {
     const { userId } = request.user as JwtPayload;
+
+    // Fetch the user's contact details so we can find splits they owe as a member
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, phone: true },
+    });
+
     const splits = await prisma.split.findMany({
       where: {
         OR: [
           { hostId: userId },
-          { members: { some: { guestContact: { contains: userId } } } },
+          ...(currentUser
+            ? [
+                { members: { some: { guestContact: currentUser.email } } },
+                { members: { some: { guestContact: currentUser.phone } } },
+              ]
+            : []),
         ],
-        hostId: userId,
       },
       include: { members: true, lineItems: true },
       orderBy: { createdAt: "desc" },
@@ -74,10 +85,9 @@ export async function splitsRoutes(fastify: FastifyInstance, options: { prisma: 
 
     const { name, totalGbp, members, splitType } = body.data;
 
-    const shares =
-      splitType === "EVEN"
-        ? splitService.calculateEvenShares(totalGbp, members.length)
-        : new Array(members.length).fill(Number((totalGbp / members.length).toFixed(2)));
+    // Both EVEN and ITEMISED use penny-correct share distribution at creation time.
+    // ITEMISED shares can be refined later via PATCH /splits/:id with line item assignments.
+    const shares = splitService.calculateEvenShares(totalGbp, members.length);
 
     const split = await prisma.split.create({
       data: {

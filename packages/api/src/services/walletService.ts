@@ -31,45 +31,48 @@ export function createWalletService(prisma: PrismaClient) {
     amountGbp: number,
     description: string
   ): Promise<void> {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new ValidationError("User not found");
-    if (Number(user.walletBalanceGbp) < amountGbp) {
-      throw new ValidationError("Insufficient wallet balance");
-    }
-
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: userId },
-        data: { walletBalanceGbp: { decrement: amountGbp } },
-      }),
-      prisma.walletTransaction.create({
-        data: {
-          userId,
-          type: TransactionType.DEBIT,
-          amountGbp,
-          description,
-          status: TransactionStatus.COMPLETED,
-        },
-      }),
-    ]);
-  }
-
-  async function recordWithdrawal(
-    userId: string,
-    amountGbp: number,
-    stripePayoutId: string
-  ): Promise<string> {
-    await prisma.user.update({
-      where: { id: userId },
+    // Atomic conditional decrement: only succeeds if balance >= amount
+    const result = await prisma.user.updateMany({
+      where: { id: userId, walletBalanceGbp: { gte: amountGbp } },
       data: { walletBalanceGbp: { decrement: amountGbp } },
     });
+    if (result.count === 0) {
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+      throw new ValidationError(user ? "Insufficient wallet balance" : "User not found");
+    }
+
+    await prisma.walletTransaction.create({
+      data: {
+        userId,
+        type: TransactionType.DEBIT,
+        amountGbp,
+        description,
+        status: TransactionStatus.COMPLETED,
+      },
+    });
+  }
+
+  // Atomically debits the wallet and creates a PENDING withdrawal record.
+  // Returns the wallet transaction ID so the caller can attach a stripePayoutId later.
+  async function recordWithdrawal(
+    userId: string,
+    amountGbp: number
+  ): Promise<string> {
+    const result = await prisma.user.updateMany({
+      where: { id: userId, walletBalanceGbp: { gte: amountGbp } },
+      data: { walletBalanceGbp: { decrement: amountGbp } },
+    });
+    if (result.count === 0) {
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+      throw new ValidationError(user ? "Insufficient wallet balance" : "User not found");
+    }
+
     const tx = await prisma.walletTransaction.create({
       data: {
         userId,
         type: TransactionType.WITHDRAWAL,
         amountGbp,
         description: "Withdrawal to bank account",
-        stripePayoutId,
         status: TransactionStatus.PENDING,
       },
     });

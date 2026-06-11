@@ -61,12 +61,25 @@ export async function guestRoutes(fastify: FastifyInstance, options: { prisma: P
     });
     if (!member) throw new NotFoundError("Member not found");
 
+    // Idempotency: return success if already paid (webhook may have beaten us)
+    if (member.paid) {
+      return { data: { success: true }, message: "Payment already confirmed" };
+    }
+
     const pi = await retrievePaymentIntent(body.data.paymentIntentId);
     if (pi.status !== "succeeded") {
       throw new PaymentError("Payment has not succeeded");
     }
     if (pi.amount !== gbpToPence(Number(member.shareGbp))) {
       throw new PaymentError("Payment amount does not match share");
+    }
+
+    // Verify the payment intent belongs to this member/token to prevent replay attacks
+    if (pi.metadata.memberId !== member.id) {
+      throw new PaymentError("Payment intent does not belong to this member");
+    }
+    if (pi.metadata.token !== token) {
+      throw new PaymentError("Payment intent does not match this token");
     }
 
     const paymentMethod =
@@ -76,8 +89,9 @@ export async function guestRoutes(fastify: FastifyInstance, options: { prisma: P
         ? "GOOGLE_PAY"
         : "CARD";
 
-    await prisma.splitMember.update({
-      where: { id: member.id },
+    // Atomic update: only proceed if not already paid (handles race with webhook)
+    const updated = await prisma.splitMember.updateMany({
+      where: { id: member.id, paid: false },
       data: {
         paid: true,
         paidAt: new Date(),
@@ -85,6 +99,11 @@ export async function guestRoutes(fastify: FastifyInstance, options: { prisma: P
         stripePaymentIntentId: pi.id,
       },
     });
+
+    if (updated.count === 0) {
+      // Webhook already processed this payment
+      return { data: { success: true }, message: "Payment already confirmed" };
+    }
 
     await splitService.creditHostWallet(member.split.hostId, Number(member.shareGbp), member.splitId);
     await guestService.markUsed(token);

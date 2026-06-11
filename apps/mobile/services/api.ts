@@ -4,18 +4,18 @@ import { ApiError } from "@wesplit/shared";
 
 let _getToken: () => string | null = () => null;
 let _getRefreshToken: () => string | null = () => null;
-let _setAuth: (access: string, refresh: string, user: any) => void = () => {};
+let _updateTokens: (access: string, refresh: string) => void = () => {};
 let _logout: () => void = () => {};
 
 export function configureApiAuth(opts: {
   getToken: () => string | null;
   getRefreshToken: () => string | null;
-  setAuth: (access: string, refresh: string, user: any) => void;
+  updateTokens: (access: string, refresh: string) => void;
   logout: () => void;
 }) {
   _getToken = opts.getToken;
   _getRefreshToken = opts.getRefreshToken;
-  _setAuth = opts.setAuth;
+  _updateTokens = opts.updateTokens;
   _logout = opts.logout;
 }
 
@@ -79,7 +79,7 @@ api.interceptors.response.use(
     try {
       const { data } = await axios.post(`${baseURL}/auth/refresh`, { refreshToken });
       const { accessToken, refreshToken: newRefresh } = data.data;
-      _setAuth(accessToken, newRefresh, null);
+      _updateTokens(accessToken, newRefresh);
       processQueue(null, accessToken);
       original.headers.Authorization = `Bearer ${accessToken}`;
       return api(original);

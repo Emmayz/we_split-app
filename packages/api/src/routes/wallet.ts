@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
-import { ValidationError, ForbiddenError } from "../utils/errors";
+import { ValidationError, ForbiddenError, PaymentError } from "../utils/errors";
 import { createWalletService } from "../services/walletService";
 import { createPayout } from "../services/stripeService";
 import { MIN_WITHDRAWAL_GBP } from "@wesplit/shared";
@@ -46,13 +46,35 @@ export async function walletRoutes(fastify: FastifyInstance, options: { prisma: 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new ValidationError("User not found");
     if (user.kycStatus !== "VERIFIED") throw new ForbiddenError("Identity verification required before withdrawal");
-    if (Number(user.walletBalanceGbp) < body.data.amountGbp) {
-      throw new ValidationError("Insufficient balance");
-    }
     if (!user.stripeConnectAccountId) throw new ForbiddenError("No Stripe account linked");
 
-    const payout = await createPayout(user.stripeConnectAccountId, body.data.amountGbp);
-    await walletService.recordWithdrawal(userId, body.data.amountGbp, payout.id);
+    // Atomically debit the wallet first before calling Stripe.
+    // recordWithdrawal returns the DB transaction ID for later linking.
+    const txId = await walletService.recordWithdrawal(userId, body.data.amountGbp);
+
+    let payout;
+    try {
+      payout = await createPayout(user.stripeConnectAccountId, body.data.amountGbp);
+    } catch (err) {
+      // Stripe call failed — reverse the debit so the user's balance is restored
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: userId },
+          data: { walletBalanceGbp: { increment: body.data.amountGbp } },
+        }),
+        prisma.walletTransaction.update({
+          where: { id: txId },
+          data: { status: "FAILED" },
+        }),
+      ]);
+      throw new PaymentError("Failed to initiate withdrawal. Please try again.");
+    }
+
+    // Link the payout ID to the pending withdrawal transaction
+    await prisma.walletTransaction.update({
+      where: { id: txId },
+      data: { stripePayoutId: payout.id },
+    });
 
     return { data: { payoutId: payout.id }, message: "Withdrawal initiated" };
   });

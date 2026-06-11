@@ -10,4 +10,8 @@ export async function authenticate(
   } catch {
     throw new UnauthorisedError("Invalid or missing token");
   }
+  const payload = request.user as { type?: string };
+  if (payload.type !== "access") {
+    throw new UnauthorisedError("Invalid token type");
+  }
 }

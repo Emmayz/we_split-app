@@ -14,9 +14,7 @@ export function createAuthService(fastify: FastifyInstance) {
     );
     const refreshToken = fastify.jwt.sign(
       { userId, type: "refresh" } satisfies TokenPayload,
-      { expiresIn: "7d" },
-      // @ts-expect-error fastify-jwt supports second secret via sign options
-      { secret: process.env.JWT_REFRESH_SECRET }
+      { expiresIn: "7d" }
     );
     return { accessToken, refreshToken };
   }

@@ -29,7 +29,7 @@ export default function RootLayout() {
     SpaceGrotesk_700Bold,
   });
 
-  const { accessToken, refreshToken, setAuth, logout, loadFromStorage } = useAuthStore();
+  const { accessToken, refreshToken, updateTokens, logout, loadFromStorage } = useAuthStore();
 
   useEffect(() => {
     loadFromStorage();
@@ -39,7 +39,7 @@ export default function RootLayout() {
     configureApiAuth({
       getToken: () => accessToken,
       getRefreshToken: () => refreshToken,
-      setAuth: (at, rt, u) => { if (u) setAuth(at, rt, u); },
+      updateTokens,
       logout,
     });
   }, [accessToken, refreshToken]);
