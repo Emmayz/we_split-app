@@ -157,9 +157,19 @@ export async function splitsRoutes(fastify: FastifyInstance, options: { prisma: 
     }
 
     if (body.data.lineItems) {
+      // Only members of this split may be assigned; reject anything else.
+      const memberIds = new Set(
+        (await prisma.splitMember.findMany({ where: { splitId: id }, select: { id: true } })).map(
+          (m) => m.id
+        )
+      );
       for (const item of body.data.lineItems) {
-        await prisma.lineItem.update({
-          where: { id: item.id },
+        if (item.assignedToMemberId !== null && !memberIds.has(item.assignedToMemberId)) {
+          throw new ValidationError("assignedToMemberId is not a member of this split");
+        }
+        // Scope the update to this split so a host cannot reassign another split's line items.
+        await prisma.lineItem.updateMany({
+          where: { id: item.id, splitId: id },
           data: { assignedToMemberId: item.assignedToMemberId },
         });
       }
@@ -250,10 +260,12 @@ export async function splitsRoutes(fastify: FastifyInstance, options: { prisma: 
     if (!split) throw new NotFoundError("Split not found");
     if (split.hostId !== userId) throw new ForbiddenError("Only the host can mark payments");
 
-    await prisma.splitMember.update({
-      where: { id: memberId },
+    // Scope the write to this split so a host cannot flip a member of another split.
+    const result = await prisma.splitMember.updateMany({
+      where: { id: memberId, splitId: id },
       data: { paid: true, paidAt: new Date() },
     });
+    if (result.count === 0) throw new NotFoundError("Member not found");
 
     await splitService.checkAndSettle(id);
 
