@@ -1,6 +1,4 @@
 import Fastify from "fastify";
-import fastifyJwt from "@fastify/jwt";
-import fastifyCors from "@fastify/cors";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyMultipart from "@fastify/multipart";
 import { PrismaClient } from "@prisma/client";
@@ -14,6 +12,8 @@ import { paymentsRoutes } from "./routes/payments";
 import { walletRoutes } from "./routes/wallet";
 import { webhookRoutes } from "./routes/webhooks";
 import { authenticate } from "./middleware/authenticate";
+import { jwtPlugin } from "./plugins/jwt";
+import { corsPlugin } from "./plugins/cors";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -33,11 +33,8 @@ export function buildApp(prisma: PrismaClient) {
     },
   });
 
-  fastify.register(fastifyJwt, {
-    secret: process.env.JWT_ACCESS_SECRET ?? "fallback_secret",
-  });
-
-  fastify.register(fastifyCors, { origin: true, credentials: true });
+  fastify.register(jwtPlugin);
+  fastify.register(corsPlugin);
 
   fastify.register(fastifyRateLimit, {
     global: true,
